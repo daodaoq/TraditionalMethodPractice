@@ -1,0 +1,366 @@
+Index: ../mini-schedule/.idea/.gitignore
+===================================================================
+diff --git a/../mini-schedule/.idea/.gitignore b/../mini-schedule/.idea/.gitignore
+deleted file mode 100644
+--- a/../mini-schedule/.idea/.gitignore	(revision 52617c93446a74d3ad9a37f908a121de158f2713)
++++ /dev/null	(revision 52617c93446a74d3ad9a37f908a121de158f2713)
+@@ -1,10 +0,0 @@
+-# 默认忽略的文件
+-/shelf/
+-/workspace.xml
+-# 基于编辑器的 HTTP 客户端请求
+-/httpRequests/
+-# 已忽略包含查询文件的默认文件夹
+-/queries/
+-# Datasource local storage ignored files
+-/dataSources/
+-/dataSources.local.xml
+Index: ../mini-schedule/src/main/java/org/java/ScheduleService.java
+===================================================================
+diff --git a/../mini-schedule/src/main/java/org/java/ScheduleService.java b/../mini-schedule/src/main/java/org/java/ScheduleService.java
+deleted file mode 100644
+--- a/../mini-schedule/src/main/java/org/java/ScheduleService.java	(revision 52617c93446a74d3ad9a37f908a121de158f2713)
++++ /dev/null	(revision 52617c93446a74d3ad9a37f908a121de158f2713)
+@@ -1,60 +0,0 @@
+-package org.java;
+-
+-import java.util.concurrent.ExecutorService;
+-import java.util.concurrent.Executors;
+-import java.util.concurrent.PriorityBlockingQueue;
+-import java.util.concurrent.locks.LockSupport;
+-
+-/**
+- * 实现一个 mini 定时任务
+- */
+-public class ScheduleService {
+-
+-    Trigger trigger = new Trigger();
+-    ExecutorService executorService = Executors.newFixedThreadPool(6);
+-
+-    void schedule(Runnable task, long delay) {
+-        Job job = new Job();
+-        job.setTask(task);
+-        job.setStartTime(System.currentTimeMillis() + delay);
+-        job.setDelay(delay);
+-        trigger.queue.offer(job);
+-        trigger.wakeUp();
+-    }
+-
+-    // 等待合适的时间，把对应的任务扔到线程池中
+-    class Trigger {
+-
+-        PriorityBlockingQueue<Job> queue = new PriorityBlockingQueue<>();
+-
+-        Thread thread = new Thread(() -> {
+-            while (true) {
+-                while (queue.isEmpty()) {
+-                    LockSupport.park();
+-                }
+-                Job latelyJob = queue.peek();
+-                if (latelyJob.getStartTime() - System.currentTimeMillis() < 0) {
+-                    latelyJob = queue.poll();
+-                    executorService.execute(latelyJob.getTask());
+-                    Job nextJob = new Job();
+-                    nextJob.setTask(latelyJob.getTask());
+-                    nextJob.setStartTime(System.currentTimeMillis() + latelyJob.getDelay());
+-                    nextJob.setDelay(latelyJob.getDelay());
+-                    queue.offer(nextJob);
+-                } else {
+-                    LockSupport.parkUntil(latelyJob.getStartTime());
+-                }
+-            }
+-        });
+-
+-        {
+-            thread.start();
+-            System.out.println("触发器启动了！");
+-        }
+-
+-        void wakeUp() {
+-            LockSupport.unpark(thread);
+-        }
+-    }
+-
+-}
+Index: ../mini-schedule/.idea/encodings.xml
+===================================================================
+diff --git a/../mini-schedule/.idea/encodings.xml b/../mini-schedule/.idea/encodings.xml
+deleted file mode 100644
+--- a/../mini-schedule/.idea/encodings.xml	(revision 52617c93446a74d3ad9a37f908a121de158f2713)
++++ /dev/null	(revision 52617c93446a74d3ad9a37f908a121de158f2713)
+@@ -1,7 +0,0 @@
+-<?xml version="1.0" encoding="UTF-8"?>
+-<project version="4">
+-  <component name="Encoding">
+-    <file url="file://$PROJECT_DIR$/src/main/java" charset="UTF-8" />
+-    <file url="file://$PROJECT_DIR$/src/main/resources" charset="UTF-8" />
+-  </component>
+-</project>
+\ No newline at end of file
+Index: ../mini-schedule/.gitignore
+===================================================================
+diff --git a/../mini-schedule/.gitignore b/../mini-schedule/.gitignore
+deleted file mode 100644
+--- a/../mini-schedule/.gitignore	(revision 52617c93446a74d3ad9a37f908a121de158f2713)
++++ /dev/null	(revision 52617c93446a74d3ad9a37f908a121de158f2713)
+@@ -1,39 +0,0 @@
+-target/
+-!.mvn/wrapper/maven-wrapper.jar
+-!**/src/main/**/target/
+-!**/src/test/**/target/
+-.kotlin
+-
+-### IntelliJ IDEA ###
+-.idea/modules.xml
+-.idea/jarRepositories.xml
+-.idea/compiler.xml
+-.idea/libraries/
+-*.iws
+-*.iml
+-*.ipr
+-
+-### Eclipse ###
+-.apt_generated
+-.classpath
+-.factorypath
+-.project
+-.settings
+-.springBeans
+-.sts4-cache
+-
+-### NetBeans ###
+-/nbproject/private/
+-/nbbuild/
+-/dist/
+-/nbdist/
+-/.nb-gradle/
+-build/
+-!**/src/main/**/build/
+-!**/src/test/**/build/
+-
+-### VS Code ###
+-.vscode/
+-
+-### Mac OS ###
+-.DS_Store
+\ No newline at end of file
+Index: ../mini-schedule/src/main/java/org/java/Job.java
+===================================================================
+diff --git a/../mini-schedule/src/main/java/org/java/Job.java b/../mini-schedule/src/main/java/org/java/Job.java
+deleted file mode 100644
+--- a/../mini-schedule/src/main/java/org/java/Job.java	(revision 52617c93446a74d3ad9a37f908a121de158f2713)
++++ /dev/null	(revision 52617c93446a74d3ad9a37f908a121de158f2713)
+@@ -1,42 +0,0 @@
+-package org.java;
+-
+-public class Job implements Comparable<Job> {
+-
+-    // 待执行任务
+-    private Runnable task;
+-
+-    // 任务计划开始时间
+-    private long startTime;
+-
+-    // 每次执行的间隔时间
+-    private long delay;
+-
+-    public long getDelay() {
+-        return delay;
+-    }
+-
+-    public void setDelay(long delay) {
+-        this.delay = delay;
+-    }
+-
+-    public Runnable getTask() {
+-        return task;
+-    }
+-
+-    public void setTask(Runnable task) {
+-        this.task = task;
+-    }
+-
+-    public long getStartTime() {
+-        return startTime;
+-    }
+-
+-    public void setStartTime(long startTime) {
+-        this.startTime = startTime;
+-    }
+-
+-    @Override
+-    public int compareTo(Job o) {
+-        return Long.compare(this.startTime, o.startTime);
+-    }
+-}
+Index: ../mini-schedule/src/main/java/org/java/Main.java
+===================================================================
+diff --git a/../mini-schedule/src/main/java/org/java/Main.java b/../mini-schedule/src/main/java/org/java/Main.java
+deleted file mode 100644
+--- a/../mini-schedule/src/main/java/org/java/Main.java	(revision 52617c93446a74d3ad9a37f908a121de158f2713)
++++ /dev/null	(revision 52617c93446a74d3ad9a37f908a121de158f2713)
+@@ -1,22 +0,0 @@
+-package org.java;
+-
+-import java.time.LocalDateTime;
+-import java.time.format.DateTimeFormatter;
+-
+-public class Main {
+-    public static void main(String[] args) throws InterruptedException {
+-        DateTimeFormatter dateTimeFormatter = DateTimeFormatter.ofPattern("HH:mm:ss SSS");
+-        ScheduleService scheduleService = new ScheduleService();
+-        scheduleService.schedule(() -> {
+-            System.out.println(LocalDateTime.now().format(dateTimeFormatter) + "这是 100 毫秒一次的");
+-        }, 100);
+-
+-        Thread.sleep(1000);
+-
+-        System.out.println("添加一个每 200 毫秒打印一个 2 的定时任务");
+-
+-        scheduleService.schedule(() -> {
+-            System.out.println(LocalDateTime.now().format(dateTimeFormatter) + "这是 200 毫秒一次的");
+-        }, 200);
+-    }
+-}
+\ No newline at end of file
+Index: ../mini-schedule/pom.xml
+===================================================================
+diff --git a/../mini-schedule/pom.xml b/../mini-schedule/pom.xml
+deleted file mode 100644
+--- a/../mini-schedule/pom.xml	(revision 52617c93446a74d3ad9a37f908a121de158f2713)
++++ /dev/null	(revision 52617c93446a74d3ad9a37f908a121de158f2713)
+@@ -1,17 +0,0 @@
+-<?xml version="1.0" encoding="UTF-8"?>
+-<project xmlns="http://maven.apache.org/POM/4.0.0"
+-         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+-    <modelVersion>4.0.0</modelVersion>
+-
+-    <groupId>org.java</groupId>
+-    <artifactId>mini-schedule</artifactId>
+-    <version>1.0-SNAPSHOT</version>
+-
+-    <properties>
+-        <maven.compiler.source>21</maven.compiler.source>
+-        <maven.compiler.target>21</maven.compiler.target>
+-        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+-    </properties>
+-
+-</project>
+\ No newline at end of file
+Index: ../mini-schedule/.idea/misc.xml
+===================================================================
+diff --git a/../mini-schedule/.idea/misc.xml b/../mini-schedule/.idea/misc.xml
+deleted file mode 100644
+--- a/../mini-schedule/.idea/misc.xml	(revision 52617c93446a74d3ad9a37f908a121de158f2713)
++++ /dev/null	(revision 52617c93446a74d3ad9a37f908a121de158f2713)
+@@ -1,14 +0,0 @@
+-<?xml version="1.0" encoding="UTF-8"?>
+-<project version="4">
+-  <component name="ExternalStorageConfigurationManager" enabled="true" />
+-  <component name="MavenProjectsManager">
+-    <option name="originalFiles">
+-      <list>
+-        <option value="$PROJECT_DIR$/pom.xml" />
+-      </list>
+-    </option>
+-  </component>
+-  <component name="ProjectRootManager" version="2" languageLevel="JDK_21" default="true" project-jdk-name="21" project-jdk-type="JavaSDK">
+-    <output url="file://$PROJECT_DIR$/out" />
+-  </component>
+-</project>
+\ No newline at end of file
+Index: .idea/.gitignore
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/.idea/.gitignore b/.idea/.gitignore
+new file mode 100644
+--- /dev/null	(date 1791099333455)
++++ b/.idea/.gitignore	(date 1791099333455)
+@@ -0,0 +1,10 @@
++# 默认忽略的文件
++/shelf/
++/workspace.xml
++# 基于编辑器的 HTTP 客户端请求
++/httpRequests/
++# 已忽略包含查询文件的默认文件夹
++/queries/
++# Datasource local storage ignored files
++/dataSources/
++/dataSources.local.xml
+Index: .idea/vcs.xml
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/.idea/vcs.xml b/.idea/vcs.xml
+new file mode 100644
+--- /dev/null	(date 1791099335963)
++++ b/.idea/vcs.xml	(date 1791099335963)
+@@ -0,0 +1,6 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<project version="4">
++  <component name="VcsDirectoryMappings">
++    <mapping directory="$PROJECT_DIR$/.." vcs="Git" />
++  </component>
++</project>
+\ No newline at end of file
+Index: .idea/encodings.xml
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/.idea/encodings.xml b/.idea/encodings.xml
+new file mode 100644
+--- /dev/null	(date 1791099335957)
++++ b/.idea/encodings.xml	(date 1791099335957)
+@@ -0,0 +1,7 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<project version="4">
++  <component name="Encoding">
++    <file url="file://$PROJECT_DIR$/src/main/java" charset="UTF-8" />
++    <file url="file://$PROJECT_DIR$/src/main/resources" charset="UTF-8" />
++  </component>
++</project>
+\ No newline at end of file
+Index: src/main/java/org/java/MyThreadPool.java
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/src/main/java/org/java/MyThreadPool.java b/src/main/java/org/java/MyThreadPool.java
+new file mode 100644
+--- /dev/null	(date 1791099374437)
++++ b/src/main/java/org/java/MyThreadPool.java	(date 1791099374437)
+@@ -0,0 +1,4 @@
++package org.java;
++
++public class MyThreadPool {
++}
+Index: .idea/misc.xml
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+diff --git a/.idea/misc.xml b/.idea/misc.xml
+new file mode 100644
+--- /dev/null	(date 1791099328134)
++++ b/.idea/misc.xml	(date 1791099328134)
+@@ -0,0 +1,14 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<project version="4">
++  <component name="ExternalStorageConfigurationManager" enabled="true" />
++  <component name="MavenProjectsManager">
++    <option name="originalFiles">
++      <list>
++        <option value="$PROJECT_DIR$/pom.xml" />
++      </list>
++    </option>
++  </component>
++  <component name="ProjectRootManager" version="2" languageLevel="JDK_21" default="true" project-jdk-name="21" project-jdk-type="JavaSDK">
++    <output url="file://$PROJECT_DIR$/out" />
++  </component>
++</project>
+\ No newline at end of file
