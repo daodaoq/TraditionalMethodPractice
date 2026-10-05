@@ -1,5 +1,8 @@
 package org.java;
 
+/**
+ * 被代理的接口
+ */
 public interface MyInterface {
 
     void func1();

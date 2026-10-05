@@ -3,6 +3,8 @@ package org.java;
 import java.io.File;
 import java.io.IOException;
 import java.lang.reflect.Constructor;
+import java.lang.reflect.Field;
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.net.URISyntaxException;
 import java.net.URL;
@@ -74,6 +76,16 @@ public class ApplicationContext {
     private Map<String, Object> ioc = new HashMap<>();
 
     /**
+     * 存未初始化完成的 bean 对象
+     */
+    private Map<String, Object> loadingIoc = new HashMap<>();
+
+    /**
+     * 存 BeanPostProcessor
+     */
+    private List<BeanPostProcessor> postProcessors = new ArrayList<>();
+
+    /**
      * 扫描包，拿到所有 Class
      * 过滤出带 @Component 的 Class
      * 把每个 Class 包装成 BeanDefinition，再创建 Bean
@@ -81,42 +93,81 @@ public class ApplicationContext {
     public void initContext(String packageName) throws IOException, URISyntaxException {
         scanPackage(packageName)
                 .stream()
-                .filter(this::scanCreate)
-                .map(this::wrapper)
+                .filter(this::canCreate)
+                .forEach(this::wrapper);
+        initBeanPostProcessor();
+        beanDefinitionMap
+                .values()
                 .forEach(this::createBean);
         // ApplicationContext.class.getClassLoader().getResource("")
     }
 
-    protected boolean scanCreate(Class<?> type) {
+    private void initBeanPostProcessor() {
+        beanDefinitionMap.values().stream()
+                .filter(bd -> BeanPostProcessor.class.isAssignableFrom(bd.getBeanType()))
+                .map(this::createBean)
+                .map((bean) -> (BeanPostProcessor) bean)
+                .forEach(postProcessors::add);
+    }
+
+    protected boolean canCreate(Class<?> type) {
         // 只有类上直接标了 @Component，才会被创建
         return type.isAnnotationPresent(Component.class);
     }
 
-    protected void createBean(BeanDefinition beanDefinition) {
+    protected Object createBean(BeanDefinition beanDefinition) {
         String name = beanDefinition.getName();
         if (ioc.containsKey(name)) {
-            return;
+            return ioc.get(name);
         }
-        doCreateBean(beanDefinition);
+        if (loadingIoc.containsKey(name)) {
+            return loadingIoc.get(name);
+        }
+        return doCreateBean(beanDefinition);
     }
 
-    private  void doCreateBean(BeanDefinition beanDefinition) {
+    private Object doCreateBean(BeanDefinition beanDefinition) {
         // 从 BeanDefinition 拿出构造器
         Constructor<?> constructor = beanDefinition.getConstructor();
         Object bean = null;
         try {
             // constructor.newInstance() 反射创建对象
             bean = constructor.newInstance();
-            // 如果有 @PostConstruct 方法，就调用它
-            Method postConstructMethod = beanDefinition.getPostConstructMethod();
-            if (postConstructMethod != null) {
-                postConstructMethod.invoke(bean);
-            }
+            loadingIoc.put(beanDefinition.getName(), bean);
+            autowiredBean(bean, beanDefinition);
+            bean = initializeBean(bean, beanDefinition);
+            loadingIoc.remove(beanDefinition.getName());
+            // 把创建好的对象放进 ioc
+            ioc.put(beanDefinition.getName(), bean);
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
-        // 把创建好的对象放进 ioc
-        ioc.put(beanDefinition.getName(), bean);
+        return bean;
+    }
+
+    private Object initializeBean(Object bean, BeanDefinition beanDefinition) throws InvocationTargetException, IllegalAccessException {
+        for (BeanPostProcessor postProcessor : postProcessors) {
+            bean = postProcessor.beforeInitializeBean(bean, beanDefinition.getName());
+        }
+
+        // 如果有 @PostConstruct 方法，就调用它
+        Method postConstructMethod = beanDefinition.getPostConstructMethod();
+        if (postConstructMethod != null) {
+            postConstructMethod.invoke(bean);
+        }
+
+        for (BeanPostProcessor postProcessor : postProcessors) {
+            bean = postProcessor.afterInitializeBean(bean, beanDefinition.getName());
+        }
+
+        return bean;
+    }
+
+    private void autowiredBean(Object bean, BeanDefinition beanDefinition) throws IllegalAccessException {
+        for (Field autowiredField : beanDefinition.getAutowiredFields()) {
+            autowiredField.setAccessible(true);
+            autowiredField.set(bean, getBean(autowiredField.getType()));
+        }
     }
 
     /**
@@ -163,21 +214,34 @@ public class ApplicationContext {
     }
 
     public Object getBean(String name){
-        return this.ioc.get(name);
+        if (name == null) {
+            return null;
+        }
+        Object bean =  this.ioc.get(name);
+        if (bean != null) {
+            return bean;
+        }
+        if (beanDefinitionMap.containsKey(name)) {
+            return createBean(beanDefinitionMap.get(name));
+        }
+        return null;
     }
 
     public <T> T getBean(Class<T> beanType) {
-        return this.ioc.values().stream()
-                .filter(bean -> beanType.isAssignableFrom(bean.getClass()))
-                .map(bean -> (T) bean)
-                .findAny()
+        String beanName = this.beanDefinitionMap.values().stream()
+                .filter(bd -> beanType.isAssignableFrom(bd.getBeanType()))
+                .map(BeanDefinition::getName)
+                .findFirst()
                 .orElse(null);
+        return (T) getBean(beanName);
     }
 
     public <T> List<T> getBeans(Class<T> beanType) {
-        return this.ioc.values().stream()
-                .filter(bean -> beanType.isAssignableFrom(bean.getClass()))
-                .map(bean -> (T) bean)
+        return this.beanDefinitionMap.values().stream()
+                .filter(bd -> beanType.isAssignableFrom(bd.getBeanType()))
+                .map(BeanDefinition::getName)
+                .map(this::getBean)
+                .map((bean) -> (T) bean)
                 .toList();
     }
 }
