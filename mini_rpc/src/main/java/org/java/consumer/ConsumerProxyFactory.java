@@ -46,31 +46,6 @@ public class ConsumerProxyFactory {
         this.consumerProperties = consumerProperties;
     }
 
-    private class ConsumerHandler extends SimpleChannelInboundHandler<Response> {
-
-        @Override
-        protected void channelRead0(ChannelHandlerContext channelHandlerContext,
-                                    Response response) throws Exception {
-            inFlightRequestManager.completeRequest(response.getRequestId(), response);
-        }
-
-        @Override
-        public void channelActive(ChannelHandlerContext ctx) throws Exception {
-            log.info("地址:{}连接了", ctx.channel().remoteAddress());
-        }
-
-        @Override
-        public void channelInactive(ChannelHandlerContext ctx) throws Exception {
-            log.info("地址:{}断开了连接", ctx.channel().remoteAddress());
-        }
-
-        @Override
-        public void exceptionCaught(ChannelHandlerContext ctx, Throwable cause) throws Exception {
-            log.error("发生了异常", cause);
-            ctx.channel().close();
-        }
-    }
-
     @SuppressWarnings("unchecked")
     public <I> I createConsumerProxy(Class<I> interfaceClass) {
         return (I) Proxy.newProxyInstance(Thread.currentThread().getContextClassLoader(),
