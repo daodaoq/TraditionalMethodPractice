@@ -8,9 +8,9 @@ import java.nio.charset.StandardCharsets;
 public class Message {
 
     // 魔数，标识这个消息是我们协议的消息
-    public static final byte[] LOGIC = "生生".getBytes(StandardCharsets.UTF_8);
+    public static final byte[] MAGIC = "生生".getBytes(StandardCharsets.UTF_8);
 
-    private byte[] logic;
+    private byte[] magic;
 
     private byte messageType;
 

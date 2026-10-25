@@ -2,6 +2,8 @@ package org.java.provider;
 
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -10,7 +12,7 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public class ProviderRegistry {
 
-    private Map<String, Invocation<?>> serviceInstanceMap = new ConcurrentHashMap<>();
+    private final Map<String, Invocation<?>> serviceInstanceMap = new ConcurrentHashMap<>();
 
     public <I> void register(Class<I> interfaceClass, I serviceInstance) {
         // 判断是否为接口
@@ -25,6 +27,10 @@ public class ProviderRegistry {
 
     public Invocation<?> findService(String serviceName) {
         return serviceInstanceMap.get(serviceName);
+    }
+
+    public List<String> allServiceName() {
+        return new ArrayList<>(serviceInstanceMap.keySet());
     }
 
     /**
