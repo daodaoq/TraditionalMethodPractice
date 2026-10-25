@@ -21,26 +21,20 @@ import org.java.register.*;
 @Slf4j
 public class ProviderServer {
 
-    private final int port;
-
-    private final String host;
+    private final ProviderProperties properties;
 
     private final ProviderRegistry registry;
 
     private final ServiceRegistry serviceRegistry;
 
-    private final RegistryConfig registryConfig;
-
     private EventLoopGroup bossEventLoopGroup;
 
     private EventLoopGroup workEventLoopGroup;
 
-    public ProviderServer(String host, int port, RegistryConfig registryConfig) {
-        this.host = host;
-        this.port = port;
+    public ProviderServer(ProviderProperties properties) {
+        this.properties = properties;
         this.registry = new ProviderRegistry();
         this.serviceRegistry = new DefaultServiceRegistry();
-        this.registryConfig = registryConfig;
     }
 
     public <I> void register(Class<I> interfaceClass, I serviceInstance) {
@@ -49,9 +43,9 @@ public class ProviderServer {
 
     public void start() {
         bossEventLoopGroup = new NioEventLoopGroup();
-        workEventLoopGroup = new NioEventLoopGroup(4);
+        workEventLoopGroup = new NioEventLoopGroup(properties.getWorkThreadNum());
         try {
-            this.serviceRegistry.init(registryConfig);
+            this.serviceRegistry.init(properties.getRegistryConfig());
             ServerBootstrap serverBootstrap = new ServerBootstrap();
             serverBootstrap.group(bossEventLoopGroup, workEventLoopGroup)
                 .channel(NioServerSocketChannel.class)
@@ -64,7 +58,7 @@ public class ProviderServer {
                             .addLast(new ProviderHandler());
                     }
                 });
-            serverBootstrap.bind(port).sync();
+            serverBootstrap.bind(properties.getHost(), properties.getPort()).sync();
             // 把本地注册表中的服务都注册到注册中心里
             registry.allServiceName().stream().map(this::buildMetadata).forEach(this.serviceRegistry::registerService);
         } catch (Exception e) {
@@ -75,8 +69,8 @@ public class ProviderServer {
     private ServiceMetadata buildMetadata(String serviceName) {
         ServiceMetadata metadata = new ServiceMetadata();
         metadata.setServiceName(serviceName);
-        metadata.setPort(port);
-        metadata.setHost(host);
+        metadata.setPort(properties.getPort());
+        metadata.setHost(properties.getHost());
         return metadata;
     }
 
@@ -91,8 +85,15 @@ public class ProviderServer {
                 return;
             }
             try {
-                Object result = invocation.invoke(request.getMethodName(), request.getParamsClass(), request.getParams());
-                log.info("{},函数被调用了{},结果是{}", request.getServiceName(), request.getMethodName(), result);
+                long startTime = System.currentTimeMillis();
+                Object result = invocation.invoke(request.getMethodName(), request.getParamsClass(),
+                    request.getParams());
+                log.info("requestId:{}, {},函数被调用了{},结果是{},耗时{}ms",
+                    request.getRequestId(),
+                    request.getServiceName(),
+                    request.getMethodName(),
+                    result,
+                    System.currentTimeMillis() - startTime);
                 channelHandlerContext.writeAndFlush(Response.success(result, request.getRequestId()));
             } catch (Exception e) {
                 Response failResp = Response.fail(e.getMessage(), request.getRequestId());

@@ -34,26 +34,33 @@ public class SSDecoder extends LengthFieldBasedFrameDecoder {
         // super.decode() 返回的 frame 已经是一个“只包含当前这一条完整消息”的 ByteBuf 了
         // frame = magic + type + body
         ByteBuf frame = (ByteBuf) super.decode(ctx, in);
-        byte[] magic = new byte[Message.MAGIC.length];
-        // 读走 magic，readerIndex += magic.length
-        frame.readBytes(magic);
-        if (!Arrays.equals(magic, Message.MAGIC)) {
-            throw new IllegalArgumentException("魔数不对！协议有问题");
+        if (frame == null) {
+            return null;
         }
-        // 读走 type，readerIndex += 1
-        byte messageType = frame.readByte();
-        // 剩下的长度为 body 的长度
-        byte[] body = new byte[frame.readableBytes()];
-        frame.readBytes(body);
-        if (Objects.equals(Message.MessageType.REQUEST.getCode(), messageType)) {
-            // 反序列化成 Request 对象
-            return deserializeRequest(body);
+        try {
+            byte[] magic = new byte[Message.MAGIC.length];
+            // 读走 magic，readerIndex += magic.length
+            frame.readBytes(magic);
+            if (!Arrays.equals(magic, Message.MAGIC)) {
+                throw new IllegalArgumentException("魔数不对！协议有问题");
+            }
+            // 读走 type，readerIndex += 1
+            byte messageType = frame.readByte();
+            // 剩下的长度为 body 的长度
+            byte[] body = new byte[frame.readableBytes()];
+            frame.readBytes(body);
+            if (Objects.equals(Message.MessageType.REQUEST.getCode(), messageType)) {
+                // 反序列化成 Request 对象
+                return deserializeRequest(body);
+            }
+            if (Objects.equals(Message.MessageType.RESPONSE.getCode(), messageType)) {
+                // 反序列化成 Response 对象
+                return deserializeResponse(body);
+            }
+            throw new IllegalArgumentException("消息类型不支持" + messageType);
+        } finally {
+            frame.release();
         }
-        if (Objects.equals(Message.MessageType.RESPONSE.getCode(), messageType)) {
-            // 反序列化成 Response 对象
-            return deserializeResponse(body);
-        }
-        throw new IllegalArgumentException("消息类型不支持"+messageType);
     }
 
     private Request deserializeRequest(byte[] body) {
