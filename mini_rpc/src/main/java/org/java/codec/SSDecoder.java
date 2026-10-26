@@ -1,73 +1,75 @@
 package org.java.codec;
 
-import com.alibaba.fastjson2.JSON;
-import com.alibaba.fastjson2.JSONObject;
-import com.alibaba.fastjson2.JSONReader;
 import io.netty.buffer.ByteBuf;
 import io.netty.channel.ChannelHandlerContext;
 import io.netty.handler.codec.LengthFieldBasedFrameDecoder;
+import io.netty.util.AttributeKey;
+import org.java.compress.Compression;
+import org.java.compress.CompressionManager;
 import org.java.message.Message;
-import org.java.message.Request;
-import org.java.message.Response;
+import org.java.serialize.Serializer;
+import org.java.serialize.SerializerManager;
 
-import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
-import java.util.Objects;
-
-import static java.nio.charset.StandardCharsets.UTF_8;
 
 public class SSDecoder extends LengthFieldBasedFrameDecoder {
 
+    public static final AttributeKey<SerializerManager> SERIALIZER_MANAGER_KEY = AttributeKey.valueOf(
+        "serializeManagerKey");
+
+    public static final AttributeKey<CompressionManager> COMPRESS_MANAGER_KEY = AttributeKey.valueOf(
+        "compressManagerKey");
+
+    private volatile SerializerManager serializerManager;
+    private volatile CompressionManager compressionManager;
+
     public SSDecoder() {
-        /**
-         * maxFrameLength	    1MB	最大帧长
-         * lengthFieldOffset	0	长度字段从第 0 字节开始
-         * lengthFieldLength	4	长度字段占 4 字节（int）
-         * lengthAdjustment	    0	长度字段的值就是整个帧剩余部分的长度
-         * initialBytesToStrip	4	解码后把前 4 字节长度字段剥掉
-         */
         super(1024 * 1024, 0, Integer.BYTES, 0, Integer.BYTES);
     }
 
     @Override
     protected Object decode(ChannelHandlerContext ctx, ByteBuf in) throws Exception {
-        // super.decode() 返回的 frame 已经是一个“只包含当前这一条完整消息”的 ByteBuf 了
-        // frame = magic + type + body
+        initIfNecessary(ctx);
         ByteBuf frame = (ByteBuf) super.decode(ctx, in);
         if (frame == null) {
             return null;
         }
         try {
             byte[] magic = new byte[Message.MAGIC.length];
-            // 读走 magic，readerIndex += magic.length
             frame.readBytes(magic);
             if (!Arrays.equals(magic, Message.MAGIC)) {
                 throw new IllegalArgumentException("魔数不对！协议有问题");
             }
-            // 读走 type，readerIndex += 1
             byte messageType = frame.readByte();
-            // 剩下的长度为 body 的长度
+            short version = frame.readShort();
+            byte serializerAndCompress = frame.readByte();
+            Compression compression = this.compressionManager.getCompression(serializerAndCompress & 0b00001111);
+            if (compression == null) {
+                throw new IllegalArgumentException("没有支持的压缩器");
+            }
+            Serializer serializer = this.serializerManager.getSerializer((serializerAndCompress & 0b11110000) >>> 4);
+            if (serializer == null) {
+                throw new IllegalArgumentException("没有支持的序列化器");
+            }
             byte[] body = new byte[frame.readableBytes()];
             frame.readBytes(body);
-            if (Objects.equals(Message.MessageType.REQUEST.getCode(), messageType)) {
-                // 反序列化成 Request 对象
-                return deserializeRequest(body);
+
+            body = compression.decompress(body);
+            Message.MessageType type = Message.MessageType.ofCode(messageType);
+            if (type == null) {
+                throw new IllegalArgumentException("不支持的消息类型" + messageType);
             }
-            if (Objects.equals(Message.MessageType.RESPONSE.getCode(), messageType)) {
-                // 反序列化成 Response 对象
-                return deserializeResponse(body);
-            }
-            throw new IllegalArgumentException("消息类型不支持" + messageType);
+            return serializer.deserialize(body, type.getMessageClass());
         } finally {
             frame.release();
         }
     }
 
-    private Request deserializeRequest(byte[] body) {
-        return JSONObject.parseObject(new String(body, StandardCharsets.UTF_8), Request.class, JSONReader.Feature.SupportClassForName);
-    }
-
-    private Response deserializeResponse(byte[] body) {
-        return JSONObject.parseObject(new String(body, StandardCharsets.UTF_8), Response.class);
+    private void initIfNecessary(ChannelHandlerContext ctx) {
+        if(serializerManager != null){
+            return;
+        }
+        serializerManager = ctx.channel().attr(SERIALIZER_MANAGER_KEY).get();
+        compressionManager = ctx.channel().attr(COMPRESS_MANAGER_KEY).get();    
     }
 }

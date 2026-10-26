@@ -1,5 +1,6 @@
 package org.java.exception;
 
+
 public class RpcException extends RuntimeException {
 
 

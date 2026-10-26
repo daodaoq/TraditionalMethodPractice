@@ -13,12 +13,12 @@ public class ResponseEncoder extends MessageToByteEncoder<Response> {
 
     @Override
     protected void encode(ChannelHandlerContext ctx, Response response, ByteBuf out) throws Exception {
-        byte[] magic = Message.MAGIC;
+        byte[] logic = Message.MAGIC;
         byte messageType = Message.MessageType.RESPONSE.getCode();
         byte[] body = serializeResponse(response);
-        int length = magic.length + Byte.BYTES + body.length;
+        int length = logic.length + Byte.BYTES + body.length;
         out.writeInt(length);
-        out.writeBytes(magic);
+        out.writeBytes(logic);
         out.writeByte(messageType);
         out.writeBytes(body);
     }
@@ -26,5 +26,4 @@ public class ResponseEncoder extends MessageToByteEncoder<Response> {
     private byte[] serializeResponse(Response response) {
         return JSONObject.toJSONString(response).getBytes(StandardCharsets.UTF_8);
     }
-
 }

@@ -1,18 +1,24 @@
 package org.java.consumer;
 
+
 import io.netty.bootstrap.Bootstrap;
 import io.netty.channel.*;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.nio.NioSocketChannel;
+import io.netty.handler.timeout.IdleStateHandler;
 import lombok.extern.slf4j.Slf4j;
-
-import org.java.codec.RequestEncoder;
 import org.java.codec.SSDecoder;
+import org.java.codec.SSEncoder;
+import org.java.compress.CompressionManager;
+import org.java.handler.HeartbeatHandler;
+import org.java.handler.TrafficRecordHandler;
 import org.java.message.Response;
 import org.java.register.ServiceMetadata;
+import org.java.serialize.SerializerManager;
 
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 
 @Slf4j
 public class ConnectionManager {
@@ -24,12 +30,19 @@ public class ConnectionManager {
     private final InFlightRequestManager inFlightRequestManager;
 
     private final ConsumerProperties properties;
+    
+    private final SerializerManager serializerManager;
+    
+    private final CompressionManager compressionManager;
 
-    public  ConnectionManager(InFlightRequestManager inFlightRequestManager, ConsumerProperties properties) {
+    public ConnectionManager(InFlightRequestManager inFlightRequestManager, ConsumerProperties properties) {
         this.inFlightRequestManager = inFlightRequestManager;
         this.bootstrap = createBootstrap(properties);
         this.properties = properties;
+        this.serializerManager = new SerializerManager();
+        this.compressionManager = new CompressionManager();
     }
+
 
     public Channel getChannel(ServiceMetadata metadata) {
         String host = metadata.getHost();
@@ -66,12 +79,14 @@ public class ConnectionManager {
                 @Override
                 protected void initChannel(NioSocketChannel nioSocketChannel) throws Exception {
                     nioSocketChannel.pipeline()
+                        .addLast(new TrafficRecordHandler())
                         .addLast(new SSDecoder())
-                        .addLast(new RequestEncoder())
+                        .addLast(new SSEncoder())
+                        .addLast(new IdleStateHandler(30,5,0, TimeUnit.SECONDS))
+                        .addLast(new HeartbeatHandler())
                         .addLast(new ConsumerHandler());
                 }
             });
-
         return bootstrap;
     }
 
@@ -85,12 +100,12 @@ public class ConnectionManager {
         @Override
         public void channelActive(ChannelHandlerContext ctx) throws Exception {
             log.info("地址:{}连接了", ctx.channel().remoteAddress());
-            // ctx.channel().attr(SSEncoder.SERIALIZE_KEY).set(properties.getSerialize());
-            // ctx.channel().attr(SSEncoder.SERIALIZER_MANAGER_KEY).set(serializerManager);
-            //
-            // ctx.channel().attr(SSEncoder.COMPRESS_KEY).set(properties.getCompress());
-            // ctx.channel().attr(SSEncoder.COMPRESS_MANAGER_KEY).set(compressionManager);
-            // ctx.fireChannelActive();
+            ctx.channel().attr(SSEncoder.SERIALIZE_KEY).set(properties.getSerialize());
+            ctx.channel().attr(SSEncoder.SERIALIZER_MANAGER_KEY).set(serializerManager);
+
+            ctx.channel().attr(SSEncoder.COMPRESS_KEY).set(properties.getCompress());
+            ctx.channel().attr(SSEncoder.COMPRESS_MANAGER_KEY).set(compressionManager);
+            ctx.fireChannelActive();
         }
 
         @Override
@@ -113,4 +128,5 @@ public class ConnectionManager {
             this.channel = channel;
         }
     }
+
 }

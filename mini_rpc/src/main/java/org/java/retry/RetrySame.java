@@ -3,6 +3,7 @@ package org.java.retry;
 import lombok.extern.slf4j.Slf4j;
 import org.java.exception.RpcException;
 import org.java.message.Response;
+import org.java.spi.Spi;
 
 import java.util.Random;
 import java.util.concurrent.CompletableFuture;
@@ -10,6 +11,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 @Slf4j
+@Spi("retrySame")
 public class RetrySame implements RetryPolicy {
 
     final int retryMax = 3;
@@ -46,4 +48,5 @@ public class RetrySame implements RetryPolicy {
     private long nextDelay(int retryCount) {
         return 100L * (1L << retryCount) + random.nextInt(0, 50);
     }
+
 }

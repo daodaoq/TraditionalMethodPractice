@@ -7,9 +7,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
-/**
- * @author gongxuanzhangmelt@gmail.com
- **/
 @Slf4j
 public class DefaultServiceRegistry implements ServiceRegistry {
 

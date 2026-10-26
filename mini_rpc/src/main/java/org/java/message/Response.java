@@ -2,15 +2,13 @@ package org.java.message;
 
 import lombok.Data;
 
+import java.io.Serializable;
+
 @Data
-public class Response {
-
+public class Response implements Serializable {
     private Object result;
-
     private int code;
-
     private String errorMessage;
-
     private int requestId;
 
     public static Response fail(String errorMessage, int requestId) {

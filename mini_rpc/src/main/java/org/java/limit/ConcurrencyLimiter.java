@@ -2,11 +2,7 @@ package org.java.limit;
 
 import java.util.concurrent.Semaphore;
 
-/**
- * 并发限流器
- */
 public class ConcurrencyLimiter implements Limiter {
-
     private final Semaphore semaphore;
 
     public ConcurrencyLimiter(int limitNum) {

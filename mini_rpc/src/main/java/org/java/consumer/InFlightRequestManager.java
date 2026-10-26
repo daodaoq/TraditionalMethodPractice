@@ -20,12 +20,11 @@ import java.util.concurrent.TimeoutException;
 @Slf4j
 public class InFlightRequestManager {
 
-    // 在途请求
     private final Map<Integer, CompletableFuture<Response>> inFlightRequestTable;
 
-    private final HashedWheelTimer timeoutTimer;
-
     private final Map<ServiceMetadata, Limiter> channelLimiterMap;
+
+    private final HashedWheelTimer timeoutTimer;
 
     private final Limiter globalLimiter;
 
@@ -39,6 +38,7 @@ public class InFlightRequestManager {
         this.channelLimiterMap = new ConcurrentHashMap<>();
     }
 
+
     public CompletableFuture<Response> inFlightRequest(Request request, long timeoutMs, ServiceMetadata metadata) {
         CompletableFuture<Response> responseFuture = new CompletableFuture<>();
         if (!globalLimiter.tryAcquire()) {
@@ -48,6 +48,7 @@ public class InFlightRequestManager {
         Limiter channelLimiter = channelLimiterMap.computeIfAbsent(metadata,
             k -> new RateLimiter(consumerProperties.getRpcPreChannel()));
         if (!channelLimiter.tryAcquire()) {
+            globalLimiter.release();
             responseFuture.completeExceptionally(new LimitException("channel限流，当前在途请求超过阈值"));
             return responseFuture;
         }
@@ -56,10 +57,11 @@ public class InFlightRequestManager {
             (t) -> responseFuture.completeExceptionally(new TimeoutException()),
             timeoutMs,
             TimeUnit.MILLISECONDS);
+
         responseFuture.whenComplete((r, e) -> {
             inFlightRequestTable.remove(request.getRequestId());
-            globalLimiter.release();
             channelLimiter.release();
+            globalLimiter.release();
             timeout.cancel();
         });
         return responseFuture;
@@ -72,7 +74,7 @@ public class InFlightRequestManager {
     public boolean completeRequest(int requestId, Response response) {
         CompletableFuture<Response> future = inFlightRequestTable.remove(requestId);
         if (future == null) {
-            log.warn("request Id:{}, 空闲返回", requestId);
+            log.warn("request Id:{},空闲返回", requestId);
             return false;
         }
         return future.complete(response);
@@ -81,7 +83,7 @@ public class InFlightRequestManager {
     public boolean completeExceptionallyRequest(int requestId, Exception e) {
         CompletableFuture<Response> future = inFlightRequestTable.remove(requestId);
         if (future == null) {
-            log.warn("request Id:{}, 空闲异常", requestId, e);
+            log.warn("request Id:{},空闲异常", requestId, e);
             return false;
         }
         return future.completeExceptionally(e);

@@ -1,0 +1,2 @@
+org.java.compress.NoneCompression
+org.java.compress.GzipCompression

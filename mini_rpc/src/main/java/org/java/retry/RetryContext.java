@@ -11,17 +11,11 @@ import java.util.function.Function;
 
 @Data
 public class RetryContext {
-
     private ServiceMetadata failService;
-
     private List<ServiceMetadata> serviceMetadataList;
-
     private long methodTimeoutMs;
-
     private long requestTimeoutMs;
-
     private LoadBalancer loadBalancer;
-
     private Function<ServiceMetadata, CompletableFuture<Response>> doRpcFunction;
 
     public CompletableFuture<Response> doRpc(ServiceMetadata serviceMetadata) {

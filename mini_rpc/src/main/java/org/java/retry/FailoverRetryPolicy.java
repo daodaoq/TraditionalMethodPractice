@@ -3,12 +3,14 @@ package org.java.retry;
 import org.java.exception.RpcException;
 import org.java.message.Response;
 import org.java.register.ServiceMetadata;
+import org.java.spi.Spi;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
+@Spi("failover")
 public class FailoverRetryPolicy implements RetryPolicy {
 
     @Override

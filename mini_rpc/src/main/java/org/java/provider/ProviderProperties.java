@@ -7,18 +7,11 @@ import org.java.register.RegistryConfig;
 public class ProviderProperties {
 
     private String host;
-
     private int port;
-
     private int workThreadNum = 4;
-
     private int globalMaxRequest = 10;
-
     private int preConsumerMaxRequest = 5;
-
     private String serialize = "json";
-
     private String compress = "none";
-
     private RegistryConfig registryConfig;
 }

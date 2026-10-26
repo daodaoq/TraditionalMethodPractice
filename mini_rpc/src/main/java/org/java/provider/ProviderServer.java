@@ -1,29 +1,43 @@
 package org.java.provider;
 
+import com.alibaba.fastjson2.JSONObject;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.channel.*;
 import io.netty.channel.nio.NioEventLoopGroup;
 import io.netty.channel.socket.nio.NioServerSocketChannel;
 import io.netty.channel.socket.nio.NioSocketChannel;
+import io.netty.handler.timeout.IdleStateHandler;
 import io.netty.util.AttributeKey;
 import lombok.extern.slf4j.Slf4j;
+import org.java.codec.SSDecoder;
+import org.java.codec.SSEncoder;
+import org.java.compress.CompressionManager;
+import org.java.handler.HeartbeatHandler;
+import org.java.handler.TrafficRecordHandler;
 import org.java.limit.ConcurrencyLimiter;
 import org.java.limit.Limiter;
 import org.java.limit.RateLimiter;
 import org.java.message.Request;
-import org.java.codec.ResponseEncoder;
-import org.java.codec.SSDecoder;
 import org.java.message.Response;
-import org.java.register.*;
+import org.java.register.DefaultServiceRegistry;
+import org.java.register.ServiceMetadata;
+import org.java.register.ServiceRegistry;
+import org.java.serialize.SerializerManager;
 
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.RejectedExecutionHandler;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
-/**
- * 服务端
- */
 @Slf4j
 public class ProviderServer {
 
+    private static final Set<Class<?>> NO_RESOLVE_CLASS_SET = Set.of(int.class,String.class,Integer.class);
+    
     private final ProviderProperties properties;
 
     private final ProviderRegistry registry;
@@ -32,15 +46,30 @@ public class ProviderServer {
 
     private final Limiter globalLimiter;
 
+    private final SerializerManager serializerManager;
+
+    private final CompressionManager compressionManager;
+
     private EventLoopGroup bossEventLoopGroup;
 
     private EventLoopGroup workEventLoopGroup;
+
+    private ThreadPoolExecutor invokeExecutor;
 
     public ProviderServer(ProviderProperties properties) {
         this.properties = properties;
         this.registry = new ProviderRegistry();
         this.serviceRegistry = new DefaultServiceRegistry();
         this.globalLimiter = new ConcurrencyLimiter(properties.getGlobalMaxRequest());
+        this.serializerManager = new SerializerManager();
+        this.compressionManager = new CompressionManager();
+        this.invokeExecutor = new ThreadPoolExecutor(
+            4,
+            4,
+            10,
+            TimeUnit.SECONDS,
+            new ArrayBlockingQueue<>(1),
+            new FastFailResponseHandler());
     }
 
     public <I> void register(Class<I> interfaceClass, I serviceInstance) {
@@ -59,14 +88,16 @@ public class ProviderServer {
                     @Override
                     protected void initChannel(NioSocketChannel nioSocketChannel) throws Exception {
                         nioSocketChannel.pipeline()
+                            .addLast(new TrafficRecordHandler())
                             .addLast(new SSDecoder())
-                            .addLast(new ResponseEncoder())
+                            .addLast(new SSEncoder())
+                            .addLast(new IdleStateHandler(30, 5, 0, TimeUnit.SECONDS))
+                            .addLast(new HeartbeatHandler())
                             .addLast(new LimitHandler())
                             .addLast(new ProviderHandler());
                     }
                 });
             serverBootstrap.bind(properties.getHost(), properties.getPort()).sync();
-            // 把本地注册表中的服务都注册到注册中心里
             registry.allServiceName().stream().map(this::buildMetadata).forEach(this.serviceRegistry::registerService);
         } catch (Exception e) {
             throw new RuntimeException("服务器启动异常", e);
@@ -96,7 +127,6 @@ public class ProviderServer {
             Limiter channelLimiter = ctx.channel().attr(CHANNEL_LIMITER_KEY).get();
             if (!channelLimiter.tryAcquire()) {
                 globalLimiter.release();
-                // 向后写消息
                 ctx.writeAndFlush(Response.fail("provider 限流", request.getRequestId()));
                 return;
             }
@@ -113,7 +143,6 @@ public class ProviderServer {
                     globalLimiter.release();
                 }
             });
-            // 向前写消息
             ctx.write(msg, promise);
         }
 
@@ -133,41 +162,35 @@ public class ProviderServer {
         }
     }
 
-    public class ProviderHandler extends  SimpleChannelInboundHandler<Request> {
+    public class ProviderHandler extends SimpleChannelInboundHandler<Request> {
 
         @Override
-        protected void channelRead0(ChannelHandlerContext channelHandlerContext, Request request) throws Exception {
+        protected void channelRead0(ChannelHandlerContext ctx, Request request) throws Exception {
             ProviderRegistry.Invocation<?> invocation = registry.findService(request.getServiceName());
             if (invocation == null) {
-                Response failResp = Response.fail(String.format("%s 没有对应的处理服务", request.getServiceName()), request.getRequestId());
-                channelHandlerContext.writeAndFlush(failResp);
+                Response failResp = Response.fail(String.format("%s 没有对应的处理服务", request.getServiceName()),
+                    request.getRequestId());
+                ctx.writeAndFlush(failResp);
                 return;
             }
-            try {
-                long startTime = System.currentTimeMillis();
-                Object result = invocation.invoke(request.getMethodName(), request.getParamsClass(),
-                    request.getParams());
-                log.info("requestId:{}, {},函数被调用了{},结果是{},耗时{}ms",
-                    request.getRequestId(),
-                    request.getServiceName(),
-                    request.getMethodName(),
-                    result,
-                    System.currentTimeMillis() - startTime);
-                channelHandlerContext.writeAndFlush(Response.success(result, request.getRequestId()));
-            } catch (Exception e) {
-                Response failResp = Response.fail(e.getMessage(), request.getRequestId());
-                channelHandlerContext.writeAndFlush(failResp);
-            }
+            invokeExecutor.execute(new InvokeTask(request, ctx, invocation));
         }
 
         @Override
         public void channelActive(ChannelHandlerContext ctx) throws Exception {
             log.info("地址:{}连接了", ctx.channel().remoteAddress());
+            ctx.channel().attr(SSEncoder.SERIALIZE_KEY).set(properties.getSerialize());
+            ctx.channel().attr(SSEncoder.SERIALIZER_MANAGER_KEY).set(serializerManager);
+
+            ctx.channel().attr(SSEncoder.COMPRESS_KEY).set(properties.getCompress());
+            ctx.channel().attr(SSEncoder.COMPRESS_MANAGER_KEY).set(compressionManager);
+            ctx.fireChannelActive();
         }
 
         @Override
         public void channelInactive(ChannelHandlerContext ctx) throws Exception {
-            log.info("地址:{}断开了连接", ctx.channel().remoteAddress());
+            log.info("地址:{} 断开了连接", ctx.channel().remoteAddress());
+            ctx.fireChannelInactive();
         }
 
         @Override
@@ -175,16 +198,114 @@ public class ProviderServer {
             log.error("发生了异常", cause);
             ctx.channel().close();
         }
+    }
 
+    private static class FastFailResponseHandler implements RejectedExecutionHandler {
+
+        @Override
+        public void rejectedExecution(Runnable task, ThreadPoolExecutor executor) {
+            if (task instanceof InvokeTask invokeTask) {
+                Response fastFail = Response.fail("服务器繁忙", invokeTask.request.getRequestId());
+                invokeTask.ctx.writeAndFlush(fastFail);
+                return;
+            }
+            throw new RuntimeException("你的task 有问题！");
+        }
+    }
+
+    private static class InvokeTask implements Runnable {
+        Request request;
+        ChannelHandlerContext ctx;
+        ProviderRegistry.Invocation<?> invocation;
+
+        public InvokeTask(Request request, ChannelHandlerContext ctx, ProviderRegistry.Invocation<?> invocation) {
+            this.request = request;
+            this.ctx = ctx;
+            this.invocation = invocation;
+        }
+
+        @Override
+        public void run() {
+            EventLoop eventLoop = ctx.channel().eventLoop();
+            try {
+                long startTime = System.currentTimeMillis();
+                Class[] paramsType = resolveMethodParamsType(request);
+                Object result = invocation.invoke(
+                    request.getMethodName(),
+                    paramsType,
+                    resolveMethodParams(request, paramsType)); //  map  --> user
+                log.info("requestId:{},{},函数被调用了{},结果是{},耗时是{}ms",
+                    request.getRequestId(),
+                    request.getServiceName(),
+                    request.getMethodName(),
+                    result,
+                    System.currentTimeMillis() - startTime);
+                Object finalResult = request.isGenericInvoke()? resolveResult(result) : result;
+                eventLoop.execute(() -> ctx.writeAndFlush(Response.success(finalResult, request.getRequestId())));
+            } catch (Exception e) {
+                eventLoop.execute(() -> {
+                    Response failResp = Response.fail(e.getMessage(), request.getRequestId());
+                    ctx.writeAndFlush(failResp);
+                });
+            }
+        }
+
+        private Object resolveResult(Object result) {
+            Class<?> resultClass = result.getClass();
+            if(NO_RESOLVE_CLASS_SET.contains(resultClass)){
+                return result;
+            }
+            //   list map 
+            return new HashMap<>(JSONObject.from(result));
+        }
+
+        @SuppressWarnings("all")
+        private Object[] resolveMethodParams(Request request, Class[] paramsType) {
+            if (!request.isGenericInvoke()) {
+                return request.getParams();
+            }
+            Object[] params = request.getParams(); 
+            Object[] result = new Object[params.length];
+            for (int i = 0; i < params.length; i++) {
+                if(params[i] instanceof Map){
+                    result[i] = new JSONObject((Map) params[i]).toJavaObject(paramsType[i]);
+                }else{
+                    result[i] = params[i];
+                }
+            }
+            return result;
+        }
+
+        @SuppressWarnings("all")
+        private Class[] resolveMethodParamsType(Request request) throws ClassNotFoundException {
+            if (!request.isGenericInvoke()) {
+                return request.getParamsClass();
+            }
+            String[] paramsClassStr = request.getParamsClassStr();
+            Class[] result = new Class[paramsClassStr.length];
+            for (int i = 0; i < paramsClassStr.length; i++) {
+                String classStr = paramsClassStr[i];
+                result[i] = analysisFromString(classStr);
+            }
+            return result;
+        }
+
+        private Class<?> analysisFromString(String classStr) throws ClassNotFoundException {
+            if (classStr.equals("int")) {
+                return int.class;
+            }
+            return Class.forName(classStr);
+        }
     }
 
     public void stop() {
         if (bossEventLoopGroup != null) {
             bossEventLoopGroup.shutdownGracefully();
         }
-
         if (workEventLoopGroup != null) {
             workEventLoopGroup.shutdownGracefully();
         }
     }
+
+
 }

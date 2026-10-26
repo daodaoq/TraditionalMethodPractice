@@ -8,11 +8,11 @@ public class ProviderApp {
         RegistryConfig registryConfig = new RegistryConfig();
         registryConfig.setRegisterType("zookeeper");
         registryConfig.setConnectString("127.0.0.1:2181");
-        ProviderProperties providerProperties = new ProviderProperties();
-        providerProperties.setHost("127.0.0.1");
-        providerProperties.setPort(8888);
-        providerProperties.setRegistryConfig(registryConfig);
-        ProviderServer providerServer = new ProviderServer(providerProperties);
+        ProviderProperties properties = new ProviderProperties();
+        properties.setHost("127.0.0.1");
+        properties.setPort(8894);
+        properties.setRegistryConfig(registryConfig);
+        ProviderServer providerServer = new ProviderServer(properties);
         providerServer.register(Add.class, new AddImpl());
         providerServer.start();
     }

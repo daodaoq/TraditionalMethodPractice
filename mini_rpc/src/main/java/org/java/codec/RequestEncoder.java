@@ -13,12 +13,12 @@ public class RequestEncoder extends MessageToByteEncoder<Request> {
 
     @Override
     protected void encode(ChannelHandlerContext ctx, Request request, ByteBuf out) throws Exception {
-        byte[] magic = Message.MAGIC;
+        byte[] logic = Message.MAGIC;
         byte messageType = Message.MessageType.REQUEST.getCode();
         byte[] body = serializeRequest(request);
-        int length = magic.length + Byte.BYTES + body.length;
+        int length = logic.length + Byte.BYTES + body.length;
         out.writeInt(length);
-        out.writeBytes(magic);
+        out.writeBytes(logic);
         out.writeByte(messageType);
         out.writeBytes(body);
     }
@@ -26,5 +26,4 @@ public class RequestEncoder extends MessageToByteEncoder<Request> {
     private byte[] serializeRequest(Request request) {
         return JSONObject.toJSONString(request).getBytes(StandardCharsets.UTF_8);
     }
-
 }

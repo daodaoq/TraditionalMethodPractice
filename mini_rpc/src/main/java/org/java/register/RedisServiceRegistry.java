@@ -4,9 +4,6 @@ import lombok.extern.slf4j.Slf4j;
 
 import java.util.List;
 
-/**
- * @author gongxuanzhangmelt@gmail.com
- **/
 @Slf4j
 public class RedisServiceRegistry implements ServiceRegistry {
 

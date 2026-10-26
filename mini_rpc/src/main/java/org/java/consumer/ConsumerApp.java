@@ -1,9 +1,11 @@
 package org.java.consumer;
 
 import org.java.api.Add;
+import org.java.api.User;
 import org.java.register.RegistryConfig;
 
-import java.util.concurrent.CyclicBarrier;
+import java.util.HashMap;
+import java.util.Map;
 
 public class ConsumerApp {
 
@@ -15,17 +17,20 @@ public class ConsumerApp {
         consumerProperties.setRegistryConfig(registryConfig);
         ConsumerProxyFactory consumerProxyFactory = new ConsumerProxyFactory(consumerProperties);
         Add addConsumer = consumerProxyFactory.createConsumerProxy(Add.class);
-        CyclicBarrier cyclicBarrier = new CyclicBarrier(10);
-        for (int i = 0; i < 100; i ++) {
-            new Thread(() -> {
-                try {
-                    cyclicBarrier.await();
-                    System.out.println(addConsumer.add(1, 2));
-                } catch (Exception e) {
-                    e.printStackTrace();
-                }
-            }).start();
-        }
+        System.out.println(addConsumer.add(1, 2));
 
+        GenericConsumer genericConsumer = consumerProxyFactory.createConsumerProxy(GenericConsumer.class);
+        System.out.println(genericConsumer.$invoke(Add.class.getName(), "add", new String[]{"int", "int"},
+            new Object[]{4, 5}));
+        //  aaa rpc + auth --->  gateway/proxy --> provider
+        Map<String,Object> user1 = new HashMap<>();
+        user1.put("age",1);
+        user1.put("name","张三");
+        Map<String,Object> user2 = new HashMap<>();
+        user2.put("age",3);
+        user2.put("name","李四");
+
+        System.out.println(genericConsumer.$invoke(Add.class.getName(), "mergeAge", new String[]{User.class.getName(), User.class.getName()},
+            new Object[]{user1, user2}));
     }
 }

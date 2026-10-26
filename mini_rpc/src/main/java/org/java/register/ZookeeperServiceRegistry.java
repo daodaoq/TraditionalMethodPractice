@@ -9,7 +9,6 @@ import org.apache.curator.x.discovery.ServiceDiscoveryBuilder;
 import org.apache.curator.x.discovery.ServiceInstance;
 import org.apache.curator.x.discovery.details.JsonInstanceSerializer;
 
-import java.util.ArrayList;
 import java.util.List;
 
 @Slf4j
@@ -42,17 +41,19 @@ public class ZookeeperServiceRegistry implements ServiceRegistry {
     @Override
     public void registerService(ServiceMetadata metadata) {
         try {
-            ServiceInstance<ServiceMetadata> instance = ServiceInstance.<ServiceMetadata>builder()
-                .address(metadata.getHost())
-                .port(metadata.getPort())
-                .name(metadata.getServiceName())
-                .payload(metadata)
-                .build();
+            ServiceInstance<ServiceMetadata> instance =
+                ServiceInstance.<ServiceMetadata>builder()
+                    .address(metadata.getHost())
+                    .port(metadata.getPort())
+                    .name(metadata.getServiceName())
+                    .payload(metadata)
+                    .build();
             discovery.registerService(instance);
         } catch (Exception e) {
             log.error("{}注册失败", metadata, e);
             throw new RuntimeException(metadata + "注册失败了");
         }
+
     }
 
     @Override
